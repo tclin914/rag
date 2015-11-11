@@ -30,9 +30,14 @@ typedef struct Command {
 } Command;
 
 void doprocessing(int sockfd); 
-void handler(int fd);
+void handler(int sockfd);
 int run(int sockfd, int readfd, Command *command,int counter, int readfdlist[], int writefdlist[]);
 int sockfd;
+
+int readline(int fd,char *ptr,int maxlen);
+
+void send_welcome(int sockfd);
+void send_prompt(int sockfd);
 
 int main(int argc, const char *argv[])
 {
@@ -68,35 +73,80 @@ int main(int argc, const char *argv[])
     listen(sockfd, 5);
     clilen = sizeof(cli_addr);
 
+    fd_set rfds;
+    fd_set wfds;
+    fd_set afds;
+    int nfds, fd;
+
+    nfds = getdtablesize();
+    FD_ZERO(&afds);
+    FD_SET(sockfd, &afds);
+
     while (1) {
-        newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-
-        if (newsockfd < 0) {
-            perror("ERROR on accept");
+        memcpy(&rfds, &afds, sizeof(rfds));
+        memcpy(&wfds, &afds, sizeof(wfds));
+        if (select(nfds, &rfds, (fd_set*)0, (fd_set*)0, (struct timeval*)0) < 0) {
+            perror("ERROR on select");
             exit(1);
         }
 
-        pid = fork();
-
-        if (pid < 0) {
-            perror("ERROR on fork");
-            exit(1);
+        if (FD_ISSET(sockfd, &rfds)) {
+            int ssock;
+            ssock = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen);
+            if (ssock < 0) {
+                perror("ERROR on accept");
+                exit(1);
+            }
+            FD_SET(ssock, &afds);
+            printf("ssock %d\n", ssock);
+            send_welcome(ssock);
         }
 
-        if (pid == 0) {
-            close(sockfd);
-            dup2(newsockfd, 0);
-            dup2(newsockfd, 1);
-            dup2(newsockfd, 2);
-            doprocessing(newsockfd);
-            close(newsockfd);
-            exit(0);
-        } else {
-            close(newsockfd);
-        }   
-    }
+        for (fd = 0; fd < nfds; fd++) {
+            if (fd != sockfd && FD_ISSET(fd, &rfds)) {
+                printf("rfds %d\n", fd);
+                char buffer[15001];
+                n = readline(sockfd, buffer, sizeof(buffer) - 1);
+                printf("recv = %s\n", buffer);
+            }
+
+            if (fd != sockfd && FD_ISSET(fd, &wfds)) {
+                printf("wfds %d\n", fd);
+                send_prompt(fd);    
+            }
+        }
     
-    close(sockfd);
+    }
+
+    /* while (1) { */
+        /* newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen); */
+
+        /* if (newsockfd < 0) { */
+            /* perror("ERROR on accept"); */
+            /* exit(1); */
+        /* } */
+
+        /* pid = fork(); */
+
+        /* if (pid < 0) { */
+            /* perror("ERROR on fork"); */
+            /* exit(1); */
+        /* } */
+
+        /* if (pid == 0) { */
+            /* close(sockfd); */
+            /* dup2(newsockfd, 0); */
+            /* dup2(newsockfd, 1); */
+            /* dup2(newsockfd, 2); */
+            /* doprocessing(newsockfd); */
+            /* close(newsockfd); */
+            /* exit(0); */
+        /* } else { */
+            /* close(newsockfd); */
+        /* }    */
+    /* }     */
+    /* close(sockfd); */
+    
     return 0;
 }
 
@@ -645,7 +695,32 @@ int readline(int fd,char *ptr,int maxlen) {
 			return(-1);
 	}
 	return(n);
-}      
+}
+
+void send_welcome(int sockfd) {
+    const char *welcome = 
+        "****************************************\n"
+        "** Welcome to the information server. **\n"
+        "****************************************\r\n";
+    int n = write(sockfd, welcome, strlen(welcome) + 1);
+    if (n < 0) {
+        perror("ERROR on writing welcome information to client");
+        exit(1);
+    }
+}
+
+void send_prompt(int sockfd) {
+    const char prompt[] = {'%', ' ', 13, 10, '\0'};
+    int n = write(sockfd, prompt, strlen(prompt) + 1);
+    if (n < 0) {
+        perror("ERROR on writing prompt to client");
+        exit(1);
+    }
+}
+
+void handler(int sockfd) {
+
+}
 
 void doprocessing(int sockfd) {
     int n;
