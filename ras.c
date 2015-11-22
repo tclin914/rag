@@ -219,6 +219,23 @@ int main(int argc, const char *argv[])
                         n = write(clientdata[id].sockfd, msg_buf, strlen(msg_buf) + 1);
                     }
                     bzero(msg_buf, 2048);
+                } else if (strncmp(buffer, "exit", 4) == 0) {
+                    /* logout hint */
+                    sprintf(msg_buf, "*** User '%s' left. ***\n", clientdata[id].nickname);
+                    for (i = 0; i < 30; i++) {
+                        if (clientdata[i].sockfd != 0) {
+                            n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                        }
+                    }
+                    /* clear client data */
+                    clientdata[id].sockfd = 0;
+                    memset(clientdata[id].nickname, 0, 21);
+                    memset(clientdata[id].ip, 0, 16);
+                    clientdata[id].port = 0;
+                    close(fd);
+                    FD_CLR(fd, &afds);
+                    bzero(msg_buf, 2048);
+                    continue;
                 } else {
                     dealcommand(fd, buffer);
                 }
