@@ -125,6 +125,7 @@ int main(int argc, const char *argv[])
             }
             FD_SET(ssock, &afds);
             printf("ssock %d\n", ssock);
+            /* set client data for who command */
             int i;
             for (i = 0; i < 30; i++) {
                 if (clientdata[i].sockfd == 0) {
@@ -137,6 +138,14 @@ int main(int argc, const char *argv[])
                 }
             }
             send_welcome(ssock);
+            /* logint hint */
+            sprintf(msg_buf, "*** User '(no name)' entered from (%s/%d). ***\n", clientdata[i].ip, clientdata[i].port);
+            for (i = 0; i < 30; i++) {
+                if (clientdata[i].sockfd != 0) {
+                    n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                }
+            }
+            bzero(msg_buf, 2048);
             send_prompt(ssock);
         }
 
