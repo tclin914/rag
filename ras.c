@@ -98,8 +98,8 @@ int main(int argc, const char *argv[])
     const char *title = "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n";
     const char *indicate = "%d\t%s\t%s%c%hu\t%s\n";
     const char *others = "%d\t%s\t%s%c%hu\n";
-    char msg_buf[1024];
-    bzero(msg_buf, 1024);
+    char msg_buf[2048];
+    bzero(msg_buf, 2048);
 
     int i;
     for (i = 0; i < 30; i++) {
@@ -170,7 +170,7 @@ int main(int argc, const char *argv[])
                                         clientdata[i].ip, '/', clientdata[i].port);
                                 n = write(fd, msg_buf, strlen(msg_buf) + 1);
                             }    
-                            bzero(msg_buf, 1024);
+                            bzero(msg_buf, 2048);
                         }
                     }
                 } else if (strncmp(buffer, "name", 4) == 0) {
@@ -179,7 +179,7 @@ int main(int argc, const char *argv[])
                         if (strcmp(clientdata[i].nickname, buffer + 5) == 0) {
                             sprintf(msg_buf, "*** User '%s' already exists. ***\n", buffer + 5);
                             n = write(fd, msg_buf, strlen(msg_buf) + 1);
-                            bzero(msg_buf, 1024);
+                            bzero(msg_buf, 2048);
                             isSame = 0;
                             break;
                         }
@@ -196,6 +196,20 @@ int main(int argc, const char *argv[])
                             n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
                         }    
                     }
+                    bzero(msg_buf, 2048);
+                } else if (strncmp(buffer, "tell", 4) == 0) {
+                    int receive_id;
+                    int msg[1025];
+                    bzero(msg, 1025);
+                    sscanf(buffer, "%*s %d %[^\t\n]", &receive_id, msg);
+                    if (clientdata[receive_id - 1].sockfd != 0) {
+                        sprintf(msg_buf, "*** %s told you ***: %s\n", clientdata[id].nickname, msg);
+                        n = write(clientdata[receive_id - 1].sockfd, msg_buf, strlen(msg_buf) + 1);
+                    } else {
+                        sprintf(msg_buf, "*** Error: user #%d does not exist yet. ***\n", receive_id);   
+                        n = write(clientdata[id].sockfd, msg_buf, strlen(msg_buf) + 1);
+                    }
+                    bzero(msg_buf, 2048);
                 } else {
                     dealcommand(fd, buffer);
                 }
