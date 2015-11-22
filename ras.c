@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -10,6 +11,7 @@
 #include <string.h>
 #include <sys/stat.h> /* open() */
 #include <fcntl.h> /* file control options */
+#include <arpa/inet.h>
 
 #define STDIN 0
 #define STDOUT 1
@@ -29,9 +31,17 @@ typedef struct Command {
     struct Command *next;
 } Command;
 
+typedef struct {
+    unsigned int sockfd;
+    char nickname[21];
+    char ip[16];
+    unsigned short port;
+} ClientData;
+
 void doprocessing(int sockfd); 
 void handler(int sockfd);
 int run(int sockfd, int readfd, Command *command,int counter, int readfdlist[], int writefdlist[]);
+void dealcommand(int sockfd, char *commands);
 int sockfd;
 
 int readline(int fd,char *ptr,int maxlen);
@@ -82,10 +92,26 @@ int main(int argc, const char *argv[])
     FD_ZERO(&afds);
     FD_SET(sockfd, &afds);
 
+    ClientData clientdata[30];
+    const char *noname = "(no name)";
+    const char *me = "<-me";
+    const char *title = "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n";
+    const char *indicate = "%d\t%s\t%s%c%hu\t%s\n";
+    const char *others = "%d\t%s\t%s%c%hu\n";
+    char msg_buf[1024];
+    bzero(msg_buf, 1024);
+
+    int i;
+    for (i = 0; i < 30; i++) {
+        clientdata[i].sockfd = 0;
+    }
+
+    int isPrompt = 0;
+
     while (1) {
         memcpy(&rfds, &afds, sizeof(rfds));
         memcpy(&wfds, &afds, sizeof(wfds));
-        if (select(nfds, &rfds, (fd_set*)0, (fd_set*)0, (struct timeval*)0) < 0) {
+        if (select(nfds, &rfds, &wfds, (fd_set*)0, (struct timeval*)0) < 0) {
             perror("ERROR on select");
             exit(1);
         }
@@ -99,53 +125,93 @@ int main(int argc, const char *argv[])
             }
             FD_SET(ssock, &afds);
             printf("ssock %d\n", ssock);
+            int i;
+            for (i = 0; i < 30; i++) {
+                if (clientdata[i].sockfd == 0) {
+                    printf("i = %d\n", i);
+                    clientdata[i].sockfd = ssock;
+                    memcpy(clientdata[i].nickname, noname, strlen(noname) + 1);              
+                    memcpy(clientdata[i].ip, inet_ntoa(cli_addr.sin_addr), 16);
+                    clientdata[i].port = cli_addr.sin_port;
+                    break;
+                }
+            }
             send_welcome(ssock);
+            send_prompt(ssock);
         }
 
         for (fd = 0; fd < nfds; fd++) {
             if (fd != sockfd && FD_ISSET(fd, &rfds)) {
                 printf("rfds %d\n", fd);
                 char buffer[15001];
-                n = readline(sockfd, buffer, sizeof(buffer) - 1);
+                n = readline(fd, buffer, sizeof(buffer) - 1);
+                buffer[n - 2] = '\0';
                 printf("recv = %s\n", buffer);
+    
+                int id;
+                int i;
+                for (i = 0; i < 30; i++) {
+                    if (clientdata[i].sockfd == fd) {
+                        id = i; 
+                        break;
+                    }
+                }
+                if (strncmp(buffer, "who", 3) == 0) {
+                    n = write(fd, title, strlen(title) + 1);
+                    for (i = 0; i < 30; i++) {
+                        if (clientdata[i].sockfd != 0) {
+                            if (clientdata[i].sockfd == fd) {
+                                sprintf(msg_buf, indicate, i + 1, clientdata[i].nickname,
+                                        clientdata[i].ip, '/', clientdata[i].port, me);
+
+                                n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                            } else {
+                                sprintf(msg_buf, others, i + 1, clientdata[i].nickname,
+                                        clientdata[i].ip, '/', clientdata[i].port);
+                                n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                            }    
+                            bzero(msg_buf, 1024);
+                        }
+                    }
+                } else if (strncmp(buffer, "name", 4) == 0) {
+                    int isSame = 1;
+                    for (i = 0; i < 30; i++) {
+                        if (strcmp(clientdata[i].nickname, buffer + 5) == 0) {
+                            sprintf(msg_buf, "*** User '%s' already exists. ***\n", buffer + 5);
+                            n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                            bzero(msg_buf, 1024);
+                            isSame = 0;
+                            break;
+                        }
+                    }
+
+                    if (isSame == 1) {
+                        memcpy(clientdata[id].nickname, buffer + 5, strlen(buffer) - 4);
+                    }
+                    
+                } else if (strncmp(buffer, "yell", 4) == 0) {
+                    sprintf(msg_buf, "*** %s yelled ***: %s\n", clientdata[id].nickname, buffer + 5);
+                    for (i = 0; i < 30; i++) {
+                        if (clientdata[i].sockfd != 0) {
+                            n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                        }    
+                    }
+                } else {
+                    dealcommand(fd, buffer);
+                }
+                send_prompt(fd);
             }
 
             if (fd != sockfd && FD_ISSET(fd, &wfds)) {
-                printf("wfds %d\n", fd);
-                send_prompt(fd);    
+                /* printf("wfds %d\n", fd); */
+                if (isPrompt == 1) {
+                    send_prompt(fd);
+                    isPrompt = 0;
+                }
             }
         }
     
     }
-
-    /* while (1) { */
-        /* newsockfd = accept(sockfd, (struct sockaddr*)&cli_addr, &clilen); */
-
-        /* if (newsockfd < 0) { */
-            /* perror("ERROR on accept"); */
-            /* exit(1); */
-        /* } */
-
-        /* pid = fork(); */
-
-        /* if (pid < 0) { */
-            /* perror("ERROR on fork"); */
-            /* exit(1); */
-        /* } */
-
-        /* if (pid == 0) { */
-            /* close(sockfd); */
-            /* dup2(newsockfd, 0); */
-            /* dup2(newsockfd, 1); */
-            /* dup2(newsockfd, 2); */
-            /* doprocessing(newsockfd); */
-            /* close(newsockfd); */
-            /* exit(0); */
-        /* } else { */
-            /* close(newsockfd); */
-        /* }    */
-    /* }     */
-    /* close(sockfd); */
     
     return 0;
 }
@@ -278,7 +344,8 @@ int run(int sockfd, int readfd, Command *command,int counter, int readfdlist[], 
                 if (writefdlist[counter] != 0) {
                     close(writefdlist[counter]);
                 }
-
+                printf("command = %s\n", command->command);
+                printf("n = %d\n", strlen(command->command));
                 pid = fork();
                 
                 if (pid < 0) {
@@ -710,7 +777,7 @@ void send_welcome(int sockfd) {
 }
 
 void send_prompt(int sockfd) {
-    const char prompt[] = {'%', ' ', 13, 10, '\0'};
+    const char prompt[] = {'%', ' ', 13, '\0'};
     int n = write(sockfd, prompt, strlen(prompt) + 1);
     if (n < 0) {
         perror("ERROR on writing prompt to client");
@@ -719,6 +786,65 @@ void send_prompt(int sockfd) {
 }
 
 void handler(int sockfd) {
+
+}
+
+void dealcommand(int sockfd, char *commands) {
+    int readfdlist[2000] = {0};
+    int writefdlist[2000] = {0};
+    int counter = 0;
+
+    Command *head = parseCommands(commands);
+    Command *go = head;
+
+    int retfd, status;
+    int move = 0;
+    int readfd = readfdlist[counter % 2000];
+    /* printf("readfd %d\n", readfd); */
+    /* fflush(stdout); */
+    while (go != NULL) {
+            
+        status = run(sockfd, readfd, go, counter, readfdlist, writefdlist);
+        /* printf("status = %d\n", status); */
+        /* fflush(stdout); */
+        if (status == 0) {
+            move = 1;
+        } else if (status == 1) {
+            break;
+        }
+        readfd = readfdlist[counter % 2000];
+        while (go->next != NULL && (go->next->commandType == e_argv || 
+                go->next->commandType == e_stdout ||
+                go->next->commandType == e_stderr ||
+                go->next->commandType == e_outfile)) {
+            go = go->next;
+        }
+        go = go->next;
+    }
+        
+    /* free linked list */
+    Command *tmp;
+    while (head != NULL) {
+        tmp = head;
+        head = head->next;
+        free(tmp);
+    }
+
+    if (status == -1) {
+        return;
+    }
+    
+    /* normal situation */
+    if (move == 1) {
+        /* reset writefd and readfd; */
+        writefdlist[counter % 2000] = 0;
+        readfdlist[counter % 2000] = 0;
+        /* printf("counter++\n"); */
+        /* fflush(stdout); */
+        printf("counter = %d\n", counter);
+        counter++;
+        move = 0;
+    }
 
 }
 
