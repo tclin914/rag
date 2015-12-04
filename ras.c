@@ -54,6 +54,8 @@ int readline(int fd,char *ptr,int maxlen);
 void send_welcome(int sockfd);
 void send_prompt(int sockfd);
 
+const char prompt[] = {'%', ' ', 13, '\0'};
+
 ClientData clientdata[30];
 char *envs[30];
 
@@ -157,8 +159,8 @@ int main(int argc, const char *argv[])
                 if (clientdata[i].sockfd == 0) {
                     clientdata[i].sockfd = ssock;
                     memcpy(clientdata[i].nickname, noname, strlen(noname) + 1);              
-                    /* memcpy(clientdata[i].ip, inet_ntoa(cli_addr.sin_addr), 16); */
-                    /* clientdata[i].port = cli_addr.sin_port; */
+                    /* [> memcpy(clientdata[i].ip, inet_ntoa(cli_addr.sin_addr), 16); <] */
+                    /* [> clientdata[i].port = cli_addr.sin_port; <] */
                     memcpy(clientdata[i].ip, "CGILAB", 7);
                     clientdata[i].port = 511;
                     break;
@@ -167,27 +169,39 @@ int main(int argc, const char *argv[])
             /* dup2(ssock, STDOUT); */
             /* dup2(ssock, STDERR); */
             /* logint hint */
-            const char *welcome = 
+            char *welcome = 
             "****************************************\n"
             "** Welcome to the information server. **\n"
             "****************************************\n";
-            n = write(ssock, welcome, strlen(welcome) + 1);
+            strcat(msg_buf, welcome);
+            /* n = write(ssock, welcome, strlen(welcome) + 1); */
             /* fprintf(stdout, welcome); */
             /* fflush(stdout); */
 
-            const char *login =  "*** User '(no name)' entered from (%s/%d). ***\n";
-            sprintf(msg_buf, login, clientdata[i].ip, clientdata[i].port);            
+            const char *login =  "*** User '(no name)' entered from %s/%d. ***\n";
+            char login_buf[256];       
+            /* sprintf(login_buf, login, clientdata[i].ip, clientdata[i].port);             */
+            sprintf(login_buf, login, "CGILAB", 511);            
+            strcat(msg_buf, login_buf);
+            strcat(msg_buf, prompt);
+            /* n = write(ssock, msg_buf, strlen(msg_buf) + 1); */
+            /* broadcast new one enter */
             for (i = 0; i < 30; i++) {
                 if (clientdata[i].sockfd != 0) {
-                    n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                    if (clientdata[i].sockfd == ssock) {
+                        n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                    } else {
+                        n = write(clientdata[i].sockfd, login_buf, strlen(msg_buf) + 1);
+                    }
                     /* dup2(clientdata[i].sockfd, STDOUT); */
                     /* dup2(clientdata[i].sockfd, STDERR); */
                     /* fprintf(stdout, msg_buf, strlen(msg_buf) + 1); */
                     /* fflush(stdout); */
                 }
             }
-            const char prompt[] = {'%', ' ', 13, '\0' };
-            n = write(ssock, prompt, strlen(prompt) + 1);
+            bzero(msg_buf, 2048);
+            /* const char prompt[] = {'%', ' ', 13, '\0' }; */
+            /* n = write(ssock, prompt, strlen(prompt) + 1); */
             /* dup2(ssock, STDOUT); */
             /* dup2(ssock, STDERR); */
             /* printf(prompt); */
@@ -195,15 +209,25 @@ int main(int argc, const char *argv[])
             /* bzero(msg_buf, 2048); */
             
             /* dup2(1, STDOUT); */
-            /* dup2(2, STDERR); */
-        
+            /* set client data for who command */
+            /* for (i = 0; i < 30; i++) { */
+                /* if (clientdata[i].sockfd == 0) { */
+                    /* clientdata[i].sockfd = ssock; */
+                    /* memcpy(clientdata[i].nickname, noname, strlen(noname) + 1);               */
+                    /* memcpy(clientdata[i].ip, inet_ntoa(cli_addr.sin_addr), 16); */
+                    /* clientdata[i].port = cli_addr.sin_port; */
+                    /* memcpy(clientdata[i].ip, "CGILAB", 7); */
+                    /* clientdata[i].port = 511; */
+                    /* break; */
+                /* } */
+            /* } */
         }
 
         for (fd = 0; fd < nfds; fd++) {
             if (fd != sockfd && FD_ISSET(fd, &rfds)) {
                 char buffer[15001];
                 n = readline(fd, buffer, sizeof(buffer) - 1);
-                buffer[n - 2] = '\0';
+                buffer[n - 1] = '\0';
     
                 int id;
                 int i;
@@ -216,35 +240,50 @@ int main(int argc, const char *argv[])
                 /* dup2(fd, STDOUT); */
                 /* dup2(fd, STDERR); */
                 if (strncmp(buffer, "who", 3) == 0) {
-                    n = write(fd, title, strlen(title) + 1);
+                    /* n = write(fd, title, strlen(title) + 1); */
                     /* fprintf(stdout, title); */
                     /* fflush(stdout); */
+                    strcat(msg_buf, title);
+                    char who_buf[2048];
+                    char single_buf[128];
+                    bzero(single_buf, 128);
+                    bzero(who_buf, 2048);
                     for (i = 0; i < 30; i++) {
                         if (clientdata[i].sockfd != 0) {
                             if (clientdata[i].sockfd == fd) {
-                                sprintf(msg_buf, indicate, i + 1, clientdata[i].nickname,
+                                sprintf(single_buf, indicate, i + 1, clientdata[i].nickname,
                                         clientdata[i].ip, '/', clientdata[i].port, me);
-                                n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                                strcat(who_buf, single_buf);
+                                /* n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1); */
                                 /* fprintf(stdout, msg_buf); */
                                 /* fflush(stdout); */
                             } else {
-                                sprintf(msg_buf, others, i + 1, clientdata[i].nickname,
+                                sprintf(single_buf, others, i + 1, clientdata[i].nickname,
                                         clientdata[i].ip, '/', clientdata[i].port);
-                                n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                                strcat(who_buf, single_buf);
+                                /* n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1); */
                                 /* fprintf(stdout, msg_buf); */
                                 /* fflush(stdout); */
                             }    
-                            bzero(msg_buf, 2048);
                         }
                     }
+                    strcat(msg_buf, who_buf);
+                    strcat(msg_buf, prompt);
+                    n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                    bzero(msg_buf, 2048);
                 } else if (strncmp(buffer, "name", 4) == 0) {
                     int isSame = 1;
                     int isDead = 1;
+                    char name_buf[256];
+                    bzero(name_buf, 256);
+                    /* check whether the name is or not existed */
                     for (i = 0; i < 30; i++) {
                         if (strcmp(clientdata[i].nickname, buffer + 5) == 0) {
                             sprintf(msg_buf, "*** User '%s' already exists. ***\n", buffer + 5);
-                            fprintf(stdout, msg_buf);
-                            fflush(stdout);
+                            strcat(msg_buf, prompt);
+                            n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                            /* fprintf(stdout, msg_buf); */
+                            /* fflush(stdout); */
                             bzero(msg_buf, 2048);
                             isSame = 0;
                             break;
@@ -255,8 +294,10 @@ int main(int argc, const char *argv[])
                         if (deads[i] != NULL) {
                             if (strcmp(deads[i], buffer + 5) == 0) {
                                 sprintf(msg_buf, "*** %s is already dead ***\n", deads[i]);
-                                fprintf(stdout, msg_buf);
-                                fflush(stdout);
+                                strcat(msg_buf, prompt);
+                                n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                                /* fprintf(stdout, msg_buf); */
+                                /* fflush(stdout); */
                                 bzero(msg_buf, 2048);
                                 isDead = 0;
                                 break;
@@ -266,17 +307,33 @@ int main(int argc, const char *argv[])
 
                     if (isSame == 1 && isDead == 1) {
                         memcpy(clientdata[id].nickname, buffer + 5, strlen(buffer) - 4);
+                        sprintf(name_buf, "*** User from %s/%d is named '%s'. ***", 
+                                clientdata[id].ip, clientdata[id].port, clientdata[id].nickname);
+                        for (i = 0; i < 30; i++) {
+                            if (clientdata[i].sockfd != 0) {
+                                sprintf(name_buf, "*** User from %s/%d is named '%s'. ***\n", 
+                                        clientdata[id].ip, clientdata[id].port, clientdata[id].nickname);
+                                if (clientdata[i].sockfd == fd) {
+                                    strcat(msg_buf, name_buf);
+                                    strcat(msg_buf, prompt);
+                                    n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                                    bzero(msg_buf, 2048);
+                                } else {
+                                    n = write(clientdata[i].sockfd, name_buf, strlen(name_buf) + 1);
+                                }
+                            }
+                        }
                     }
                     
                 } else if (strncmp(buffer, "yell", 4) == 0) {
                     sprintf(msg_buf, "*** %s yelled ***: %s\n", clientdata[id].nickname, buffer + 5);
                     for (i = 0; i < 30; i++) {
                         if (clientdata[i].sockfd != 0) {
-                            /* n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1); */
-                            dup2(clientdata[i].sockfd, STDOUT);
-                            dup2(clientdata[i].sockfd, STDERR);
-                            fprintf(stdout, msg_buf);
-                            fflush(stdout);
+                            n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                            /* dup2(clientdata[i].sockfd, STDOUT); */
+                            /* dup2(clientdata[i].sockfd, STDERR); */
+                            /* fprintf(stdout, msg_buf); */
+                            /* fflush(stdout); */
                         }    
                     }
                     bzero(msg_buf, 2048);
@@ -287,16 +344,18 @@ int main(int argc, const char *argv[])
                     sscanf(buffer, "%*s %d %[^\t\n]", &receive_id, msg);
                     if (clientdata[receive_id - 1].sockfd != 0) {
                         sprintf(msg_buf, "*** %s told you ***: %s\n", clientdata[id].nickname, msg); 
-                        dup2(clientdata[receive_id - 1].sockfd, STDOUT);
-                        dup2(clientdata[receive_id - 1].sockfd, STDERR);
-                        fprintf(stdout, msg_buf);
-                        fflush(stdout);
+                        n = write(clientdata[receive_id - 1].sockfd, msg_buf, strlen(msg_buf) + 1);
+                        /* dup2(clientdata[receive_id - 1].sockfd, STDOUT); */
+                        /* dup2(clientdata[receive_id - 1].sockfd, STDERR); */
+                        /* fprintf(stdout, msg_buf); */
+                        /* fflush(stdout); */
                     } else {
                         sprintf(msg_buf, "*** Error: user #%d does not exist yet. ***\n", receive_id);   
-                        dup2(clientdata[id].sockfd, STDOUT);
-                        dup2(clientdata[id].sockfd, STDERR);
-                        fprintf(stdout, msg_buf);
-                        fflush(stdout);
+                        n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                        /* dup2(clientdata[id].sockfd, STDOUT); */
+                        /* dup2(clientdata[id].sockfd, STDERR); */
+                        /* fprintf(stdout, msg_buf); */
+                        /* fflush(stdout); */
                     }
                     bzero(msg_buf, 2048);
                 } else if (strncmp(buffer, "exit", 4) == 0) {
@@ -328,10 +387,11 @@ int main(int argc, const char *argv[])
                     sprintf(msg_buf, "*** %s is already dead ***\n", clientdata[id].nickname);
                     for (i = 0; i < 30; i++) {
                         if (clientdata[i].sockfd != 0) { 
-                            dup2(clientdata[i].sockfd, STDOUT);
-                            dup2(clientdata[i].sockfd, STDERR);
-                            fprintf(stdout, msg_buf);
-                            fflush(stdout);
+                            n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                            /* dup2(clientdata[i].sockfd, STDOUT); */
+                            /* dup2(clientdata[i].sockfd, STDERR); */
+                            /* fprintf(stdout, msg_buf); */
+                            /* fflush(stdout); */
                         }
                     }
                     char *dead_message = (char*)malloc(sizeof(char) * (strlen(clientdata[id].nickname) + 1));
@@ -347,11 +407,11 @@ int main(int argc, const char *argv[])
                     sprintf(msg_buf, "*** User '%s' left. ***\n", clientdata[id].nickname);
                     for (i = 0; i < 30; i++) {
                         if (clientdata[i].sockfd != 0) {
-                            /* n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1); */
-                            dup2(clientdata[i].sockfd, STDOUT);
-                            dup2(clientdata[i].sockfd, STDERR);
-                            fprintf(stdout, msg_buf);
-                            fflush(stdout);
+                            n = write(clientdata[i].sockfd, msg_buf, strlen(msg_buf) + 1);
+                            /* dup2(clientdata[i].sockfd, STDOUT); */
+                            /* dup2(clientdata[i].sockfd, STDERR); */
+                            /* fprintf(stdout, msg_buf); */
+                            /* fflush(stdout); */
                         }
                     }
                     /* clear client data */
@@ -359,19 +419,42 @@ int main(int argc, const char *argv[])
                     memset(clientdata[id].nickname, 0, 21);
                     memset(clientdata[id].ip, 0, 16);
                     clientdata[id].port = 0;
-                    fflush(stdout);
+                    
                     close(fd);
                     FD_CLR(fd, &afds);
                     bzero(msg_buf, 2048);
                     continue;
+                /*  printenv */
+                } else if (strncmp(buffer, "printenv", 8) == 0) {
+                    setenv("PATH", envs[id], 1);
+                    char msg[256];
+                    bzero(msg, 256);
+                    char *envar = NULL;
+                    sscanf(buffer, "%*s %s", msg);
+                    if ((envar = getenv(msg)) != NULL) { 
+                        sprintf(msg_buf, "%s=%s\n%s", msg, envar, prompt);
+                        n = write(fd, msg_buf, strlen(msg_buf) + 1);
+                    }
+                /* [> setenv <] */
+                } else if (strncmp(buffer, "setenv", 6) == 0) {
+                    // TODO:less arguments event
+                    char var[256];
+                    bzero(var, 256);
+                    char path[256];
+                    bzero(path, 256);
+                    sscanf(buffer, "%*s %s %s", var, path);
+                    setenv(var, path, 1); 
+                    free(envs[id]); 
+                    envs[id] = (char*)malloc(sizeof(char) * (strlen(path) + 1)); 
+                    memcpy(envs[id], path, strlen(path) + 1);
+                    n = write(fd, prompt, strlen(prompt) + 1);
                 } else {
                     dealcommand(id, fd, buffer);
-                    
+                    n = write(fd, prompt, strlen(prompt) + 1);
                 }
                 /* dup2(fd, STDOUT); */
                 /* dup2(fd, STDERR); */
-                const char prompt[] = {'%', ' ', 13, '\0'};
-                n = write(fd, prompt, strlen(prompt) + 1);
+                /* n = write(fd, prompt, strlen(prompt) + 1); */
                 /* fprintf(stdout, prompt, strlen(prompt) + 1); */
                 /* fflush(stdout); */
             }
@@ -501,13 +584,17 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
                 return -1;
             /* printenv */
             } else if (strcmp(command->command, "printenv") == 0) {
-                if ((envar = getenv(command->next->command)) != NULL) { 
-                    sprintf(msg_buf, "%s=%s\n", command->next->command, envar);
-                    dup2(sockfd, STDOUT);
-                    dup2(sockfd, STDERR);
-                    /* n = write(sockfd, msg_buf, strlen(msg_buf) + 1); */
-                    fprintf(stdout, msg_buf);
-                    fflush(stdout);
+                if ((envar = getenv(command->next->command)) != NULL) {
+                    char env_buf[128];
+                    bzero(env_buf, 128);
+                    strcat(env_buf, envar);
+                    strcat(env_buf, "\n");
+                    sprintf(msg_buf, "%s=%s\n", command->next->command, env_buf);
+                   /* dup2(sockfd, STDOUT); */
+                    /* dup2(sockfd, STDERR); */
+                    n = write(sockfd, msg_buf, strlen(msg_buf) + 1);
+                    /* fprintf(stdout, msg_buf); */
+                    /* fflush(stdout); */
                     return 0;
                 }
             /* setenv */
@@ -556,7 +643,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                     /* execv(command->path, arguments); */
                     execvp(command->command, arguments);
-                    fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                    fprintf(stderr, "Unknown command: [%s].\n", command->command);
                     exit(1);
                 } else {
                     waitpid((pid_t)pid, &status_pid, 0);
@@ -591,7 +678,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
                     close(filefd);
                     /* execv(command->path, arguments); */
                     execvp(command->command, arguments);
-                    fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                    fprintf(stderr, "Unknown command: [%s].\n", command->command);
                     exit(1);
                 } else {
                     waitpid((pid_t)pid, &status_pid, 0);
@@ -758,7 +845,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                         /* execv(command->path, arguments); */
                         execvp(command->command, arguments);
-                        fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                        fprintf(stderr, "Unknown command: [%s].\n", command->command);
                         exit(1);
                     } else {
 
@@ -792,7 +879,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
                         
                         /* execv(command->path, arguments); */
                         execvp(command->command, arguments);
-                        fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                        fprintf(stderr, "Unknown command: [%s].\n", command->command);
                         exit(1);
                     } else {
                         waitpid((pid_t)pid, &status_pid, 0);
@@ -854,7 +941,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                             /* execv(command->path, arguments); */
                             execvp(command->command, arguments);
-                            fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                            fprintf(stderr, "Unknown command: [%s].\n", command->command);
                             exit(1);
                         } else {
                             waitpid((pid_t)pid, &status_pid, 0);
@@ -891,7 +978,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                             /* execv(command->path, arguments); */
                             execvp(command->command, arguments);
-                            fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                            fprintf(stderr, "Unknown command: [%s].\n", command->command);
                             exit(1);
                         } else {
                             waitpid((pid_t)pid, &status_pid, 0);
@@ -961,7 +1048,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                         /* execv(command->path, arguments); */
                         execvp(command->command, arguments);
-                        fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                        fprintf(stderr, "Unknown command: [%s].\n", command->command);
                         exit(1);
                     } else {
                         waitpid((pid_t)pid, &status_pid, 0);
@@ -991,7 +1078,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                         /* execv(command->path, arguments); */
                         execvp(command->command, arguments);
-                        fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                        fprintf(stderr, "Unknown command: [%s].\n", command->command);
                         exit(1);
                     } else {
                         waitpid((pid_t)pid, &status_pid, 0);
@@ -1043,7 +1130,7 @@ int run(int id, int sockfd, int readfd, Command *command,int counter, int readfd
 
                     /* execv(command->path, arguments); */
                     execvp(command->command, arguments);
-                    fprintf(stderr, "Unknown Command: [%s].\n", command->command);
+                    fprintf(stderr, "Unknown command: [%s].\n", command->command);
                     exit(1);
                 } else {
                     close(pfd[1]);
