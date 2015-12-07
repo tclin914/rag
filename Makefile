@@ -7,4 +7,5 @@ fifo.o: fifo.c
 	gcc $< -c -o $@
 
 clean: 
-	rm ../ras
+	rm ras
+	rm fifo.o
